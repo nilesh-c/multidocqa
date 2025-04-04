@@ -31,11 +31,13 @@ def train_model(model, dataloader, optimizer, criterion, device):
         labels = labels.to(device)
 
         optimizer.zero_grad()
-        logits, _ = model(question_tokens, article_tokens)
+        logits = model(question_tokens, article_tokens)
         loss = criterion(logits, labels)
         loss.backward()
         optimizer.step()
         total_loss += loss.item()
+        print(f"Batch Loss: {loss.item():.4f}")
+    print(f"Epoch Loss: {total_loss / len(dataloader):.4f}")
     return total_loss / len(dataloader)
 
 
@@ -74,8 +76,15 @@ def main():
     max_len = 512
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+    encoder_model_name = "nlpaueb/legal-bert-base-uncased"
     # Tokenizer
-    tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
+    tokenizer = AutoTokenizer.from_pretrained(encoder_model_name)
+
+    # Dataset and DataLoader
+    civil_code = load_json(
+        "data/coliee2025/COLIEE2025statute_data-English/text/civil_code_en.json"
+    )
+    dataset = load_json("data/processed/train.json")
 
     # Split train data into train/test
     random.shuffle(dataset)
@@ -83,19 +92,13 @@ def main():
     train_split = dataset[:split_idx]
     test_split = dataset[split_idx:]
 
-    # Dataset and DataLoader
-    civil_code = load_json(
-        "../data/coliee2025/COLIEE2025statute_data-English/text/civil_code_en.json"
-    )
-    dataset = load_json("../data/processed/train.json")
-
     train_dataset = LegalDataset(train_split, civil_code, tokenizer, max_len)
     test_dataset = LegalDataset(test_split, civil_code, tokenizer, max_len)
     train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     test_dataloader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
 
     # Model, optimizer, and loss
-    encoder = AutoModel.from_pretrained("bert-base-uncased")
+    encoder = AutoModel.from_pretrained(encoder_model_name)
     model = LegalEntailmentModel(encoder).to(device)
     optimizer = optim.AdamW(model.parameters(), lr=learning_rate)
     criterion = nn.CrossEntropyLoss()
