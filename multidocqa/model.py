@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-from transformers import AutoTokenizer, AutoModel
+from xformers.ops import memory_efficient_attention
+from tqdm import tqdm
 
 
 class LegalEntailmentModel(nn.Module):
@@ -9,48 +9,82 @@ class LegalEntailmentModel(nn.Module):
         super(LegalEntailmentModel, self).__init__()
         self.encoder = encoder
         self.hidden_size = hidden_size
-        self.cross_attention = nn.MultiheadAttention(
-            embed_dim=hidden_size, num_heads=8, batch_first=True
-        )
         self.classifier = nn.Linear(hidden_size * 2, 2)
         self.use_gumbel = use_gumbel
         self.temperature = temperature
 
-    def forward(self, question_tokens, article_tokens, inference=False):
-        # Encode question
-        question_embedding = self.encoder(
-            **question_tokens
-        ).last_hidden_state  # (batch_size, seq_len, hidden_size)
+        # Add learnable projection matrices for attention
+        self.q_proj = nn.Linear(hidden_size, hidden_size, bias=False)
+        self.k_proj = nn.Linear(hidden_size, hidden_size, bias=False)
+        self.v_proj = nn.Linear(hidden_size, hidden_size, bias=False)
 
-        # Encode all articles in a batch
-        batch_size, num_articles = len(article_tokens), len(article_tokens[0])
-        flat_article_tokens = {
-            key: torch.cat([tokens[key] for tokens in article_tokens], dim=0)
-            for key in article_tokens[0]
-        }
-        article_embeddings = self.encoder(**flat_article_tokens).last_hidden_state
-        article_embeddings = article_embeddings.view(
-            batch_size, num_articles, -1, self.hidden_size
-        )  # (batch_size, num_articles, seq_len, hidden_size)
+    def forward(self, question_tokens, article_tokens, inference=False, chunk_size=64):
+        with torch.no_grad():
+            question_embedding = self.encoder(**question_tokens).last_hidden_state
 
-        # Flatten articles for cross-attention
-        article_embeddings_flat = article_embeddings.view(
-            batch_size, -1, self.hidden_size
-        )  # (batch_size, num_articles * seq_len, hidden_size)
+        batch_size, seq_len_q, hidden_size = question_embedding.shape
+        num_articles = len(article_tokens)
 
-        # Cross-attention between question and articles
-        question_context, _ = self.cross_attention(
-            query=question_embedding,
-            key=article_embeddings_flat,
-            value=article_embeddings_flat,
-        )  # (batch_size, seq_len, hidden_size)
+        aggregated_context_sum = torch.zeros(
+            batch_size, seq_len_q, hidden_size, device=question_embedding.device
+        )
+        total_articles_processed = 0
 
-        # Pool the question context (e.g., take the CLS token representation)
-        pooled_question_context = question_context[:, 0, :]  # (batch_size, hidden_size)
+        for i in tqdm(range(0, num_articles, chunk_size)):
+            chunk = article_tokens[i : i + chunk_size]
+
+            with torch.no_grad():
+                article_embeddings = [
+                    self.encoder(**inputs).last_hidden_state for inputs in chunk
+                ]
+                article_embeddings = nn.utils.rnn.pad_sequence(
+                    article_embeddings, batch_first=True
+                )
+
+            chunk_size_actual = len(chunk)
+            max_seq_len_a = article_embeddings.shape[2]
+
+            article_embeddings = article_embeddings.view(
+                batch_size * chunk_size_actual, max_seq_len_a, hidden_size
+            ).contiguous()
+
+            question_embedding_expanded = (
+                question_embedding.unsqueeze(1)
+                .expand(-1, chunk_size_actual, -1, -1)
+                .reshape(batch_size * chunk_size_actual, seq_len_q, hidden_size)
+                .contiguous()
+            )
+
+            # Apply learnable projections
+            query = self.q_proj(question_embedding_expanded)
+            key = self.k_proj(article_embeddings)
+            value = self.v_proj(article_embeddings)
+
+            attended_chunk = memory_efficient_attention(
+                query=query,
+                key=key,
+                value=value,
+            )
+
+            attended_chunk = attended_chunk.view(
+                batch_size, chunk_size_actual, seq_len_q, hidden_size
+            )
+            aggregated_context_sum += attended_chunk.sum(dim=1)
+            total_articles_processed += chunk_size_actual
+
+            del article_embeddings, question_embedding_expanded, attended_chunk
+            torch.cuda.empty_cache()
+
+        aggregated_context = aggregated_context_sum / total_articles_processed
+        pooled_question_context = aggregated_context[:, 0, :]
 
         combined_representation = torch.cat(
-            [question_embedding, pooled_question_context], dim=-1
-        )  # (batch_size, hidden_size * 2)
-        # Classification
+            [
+                question_embedding[:, 0, :].view(batch_size, hidden_size),
+                pooled_question_context,
+            ],
+            dim=-1,
+        )
+
         logits = self.classifier(combined_representation)
         return logits
