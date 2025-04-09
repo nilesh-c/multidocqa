@@ -1,9 +1,10 @@
 import json
 import asyncio
+import pprint
 from openai import AsyncOpenAI
-import os
-from tqdm import tqdm
-from typing import List, Dict
+from pydantic import BaseModel, Field
+from tqdm.asyncio import tqdm_asyncio
+from typing import List, Dict, Literal
 from multidocqa.llm_client import VllmEndpointGenerator
 
 # Script for zero-shot or few-shot in-context learning (ICL) evaluation of a legal reasoning model using OpenAI API
@@ -32,6 +33,13 @@ def load_data(path: str) -> List[Dict]:
         return json.load(f)[:100]
 
 
+class ReasoningOutput(BaseModel):
+    answer: Literal["Y", "N"] = Field(
+        description="Whether the statement is true or not"
+    )
+    relevant_articles: List[int] = Field(description="List of relevant article numbers")
+
+
 # Prepare Prompt
 def create_prompt(civil_code: List[Dict], question: str) -> str:
     code_str = "\n".join(
@@ -48,9 +56,11 @@ Respond strictly with 'Y' or 'N'.
 Civil Code:
 {code_str}
 
-Respond to the following question or statement strictly with 'Y' for yes or 'N' for no. Do not use any other words or phrases. Only Y or N is allowed.
+Respond to the following question or statement with valid JSON (schema given below) containing and answer ('Y' for yes or 'N' for no)
+along with a list of relevant article numbers. Do not use any other words or phrases.
 
 Statement: {question}
+JSON Schema: {ReasoningOutput.model_json_schema()}
 Answer:
 """
     return prompt
@@ -65,17 +75,28 @@ async def evaluate(civil_code: List[Dict], dataset: List[Dict]) -> None:
     prompts = [create_prompt(civil_code, item["question"]) for item in dataset]
 
     print("Sending prompts to model...")
-    outputs = await generator.generate(prompts)
+    outputs = generator.generate(
+        prompts, guided_json=ReasoningOutput.model_json_schema()
+    )
 
-    correct = 0
-    for item, output in tqdm(zip(dataset, outputs)):
-        gold = item["label"]
+    # tqdm for async iteration
+    idx = 0
+    async for output in tqdm_asyncio(outputs, total=total):
+        item = dataset[idx]
+        idx += 1
+
         prediction, reasoning = output
-        if prediction == gold:
+        prediction = json.loads(prediction)
+        predicted_label = prediction["answer"]
+        gold_label = item["label"]
+        print(f"Prediction: {predicted_label}, Gold: {gold_label}")
+        pprint(prediction)
+
+        if predicted_label.strip() == gold_label:
             correct += 1
         else:
             print(
-                f"\nIncorrect prediction for ID {item['id']}\nQuestion: {item['question']}\nPrediction: {prediction}, Gold: {gold}\n"
+                f"\nIncorrect prediction for ID {item['id']}\nQuestion: {item['question']}\nPrediction: {predicted_label}, Gold: {gold_label}\n"
             )
             print(reasoning)
 
