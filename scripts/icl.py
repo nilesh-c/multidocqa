@@ -30,7 +30,7 @@ def load_civil_code(path: str) -> List[Dict]:
 # Load train/eval dataset
 def load_data(path: str) -> List[Dict]:
     with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)[:100]
+        return json.load(f)[:10]
 
 
 class ReasoningOutput(BaseModel):
@@ -41,10 +41,11 @@ class ReasoningOutput(BaseModel):
 
 
 # Prepare Prompt
-def create_prompt(civil_code: List[Dict], question: str) -> str:
+def create_simple_prompt(civil_code: List[Dict], question: str) -> str:
     code_str = "\n".join(
         [f"Article {art['number']}: {art['content']}" for art in civil_code]
     )
+
     prompt = f"""
 You are a legal reasoning AI. Given a list of Civil Code articles and a legal question or statement, your task is to:
 1. Retrieve the articles most relevant to the question or statement.
@@ -56,8 +57,32 @@ Respond strictly with 'Y' or 'N'.
 Civil Code:
 {code_str}
 
-Respond to the following question or statement with valid JSON (schema given below) containing and answer ('Y' for yes or 'N' for no)
-along with a list of relevant article numbers. Do not use any other words or phrases.
+Respond to the following question or statement strictly with 'Y' for yes or 'N' for no. Do not use any other words or phrases. Only Y or N is allowed.
+
+Statement: {question}
+Answer:
+"""
+    return prompt
+
+
+# Prepare Prompt with JSON Output
+def create_json_prompt(civil_code: List[Dict], question: str) -> str:
+    code_str = "\n".join(
+        [f"Article {art['number']}: {art['content']}" for art in civil_code]
+    )
+    prompt = f"""
+You are a legal reasoning AI. Given a list of Civil Code articles and a legal question or statement, your task is to:
+1. Retrieve a maximum of 5 articles most relevant to the question or statement.
+2. Based on the retrieved articles, determine whether the articles entail the statement as true (Y) or not (N).
+3. Repeatedly check and refine your reasoning and conclusions until you reach a final conclusion.
+
+Respond strictly with 'Y' or 'N'.
+
+Civil Code:
+{code_str}
+
+After thinking and reasoning, respond to the following question or statement with valid JSON (schema given below) containing and answer ('Y' for yes or 'N' for no)
+along with a list of relevant article numbers. Choose a maximum of 5 articles.
 
 Statement: {question}
 JSON Schema: {ReasoningOutput.model_json_schema()}
@@ -67,16 +92,25 @@ Answer:
 
 
 # Evaluate on Dataset
-async def evaluate(civil_code: List[Dict], dataset: List[Dict]) -> None:
+async def evaluate(
+    civil_code: List[Dict], dataset: List[Dict], prompt_type: Literal["json", "simple"]
+) -> None:
     generator = VllmEndpointGenerator(model=MODEL_NAME)
     correct = 0
     total = len(dataset)
+
+    create_prompt = (
+        create_json_prompt if prompt_type == "json" else create_simple_prompt
+    )
 
     prompts = [create_prompt(civil_code, item["question"]) for item in dataset]
 
     print("Sending prompts to model...")
     outputs = generator.generate(
-        prompts, guided_json=ReasoningOutput.model_json_schema()
+        prompts,
+        guided_json=(
+            ReasoningOutput.model_json_schema() if prompt_type == "json" else None
+        ),
     )
 
     # tqdm for async iteration
@@ -86,11 +120,24 @@ async def evaluate(civil_code: List[Dict], dataset: List[Dict]) -> None:
         idx += 1
 
         prediction, reasoning = output
-        prediction = json.loads(prediction)
-        predicted_label = prediction["answer"]
+        if prompt_type == "json":
+            try:
+                prediction = ReasoningOutput.model_validate_json(prediction)
+                print("Gold label:", item["label"])
+                print(
+                    "Gold relevant articles:",
+                    [a["number"] for a in dataset[idx]["articles"]],
+                )
+                print(prediction.model_dump_json(indent=2))
+                predicted_label = prediction.answer
+            except json.JSONDecodeError:
+                print(f"Invalid JSON response: {prediction}")
+                continue
+        else:
+            predicted_label = prediction.strip()
+
         gold_label = item["label"]
         print(f"Prediction: {predicted_label}, Gold: {gold_label}")
-        pprint(prediction)
 
         if predicted_label.strip() == gold_label:
             correct += 1
@@ -109,4 +156,4 @@ if __name__ == "__main__":
     civil_code = load_civil_code(CIVIL_CODE_FILE)
     dataset = load_data(DATASET_FILE)
     print("Evaluating model...")
-    asyncio.run(evaluate(civil_code, dataset))
+    asyncio.run(evaluate(civil_code, dataset, prompt_type="json"))
