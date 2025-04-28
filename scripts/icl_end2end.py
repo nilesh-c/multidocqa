@@ -2,7 +2,7 @@ import json
 import asyncio
 import pprint
 from openai import AsyncOpenAI
-from pydantic import BaseModel, Field
+from multidocqa.utils import load_data, load_civil_code, ReasoningOutput
 from tqdm.asyncio import tqdm_asyncio
 from typing import List, Dict, Literal
 from multidocqa.llm_client import VllmEndpointGenerator
@@ -19,25 +19,6 @@ CIVIL_CODE_FILE = (
     "data/coliee2025/COLIEE2025statute_data-English/text/civil_code_en.json"
 )
 DATASET_FILE = "data/processed/train.json"
-
-
-# Load Civil Code Articles
-def load_civil_code(path: str) -> List[Dict]:
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
-
-
-# Load train/eval dataset
-def load_data(path: str) -> List[Dict]:
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)[:10]
-
-
-class ReasoningOutput(BaseModel):
-    answer: Literal["Y", "N"] = Field(
-        description="Whether the statement is true or not"
-    )
-    relevant_articles: List[int] = Field(description="List of relevant article numbers")
 
 
 # Prepare Prompt
@@ -91,7 +72,6 @@ Answer:
     return prompt
 
 
-# Evaluate on Dataset
 async def evaluate(
     civil_code: List[Dict], dataset: List[Dict], prompt_type: Literal["json", "simple"]
 ) -> None:
@@ -113,7 +93,6 @@ async def evaluate(
         ),
     )
 
-    # tqdm for async iteration
     idx = 0
     async for output in tqdm_asyncio(outputs, total=total):
         item = dataset[idx]
@@ -126,20 +105,20 @@ async def evaluate(
                 print("Gold label:", item["label"])
                 print(
                     "Gold relevant articles:",
-                    [a["number"] for a in dataset[idx]["articles"]],
+                    [a["number"] for a in item["articles"]],
                 )
                 print(prediction.model_dump_json(indent=2))
                 predicted_label = prediction.answer
-            except json.JSONDecodeError:
+            except ValidationError:
                 print(f"Invalid JSON response: {prediction}")
-                continue
+                predicted_label = None
         else:
             predicted_label = prediction.strip()
 
         gold_label = item["label"]
         print(f"Prediction: {predicted_label}, Gold: {gold_label}")
 
-        if predicted_label.strip() == gold_label:
+        if predicted_label == gold_label:
             correct += 1
         else:
             print(

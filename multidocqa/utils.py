@@ -1,6 +1,8 @@
 import os
 import xml.etree.ElementTree as ET
 import json
+from typing import List, Dict, Literal
+from pydantic import BaseModel, Field
 
 
 def extract_articles(text):
@@ -113,3 +115,46 @@ def parse_coliee_xml_folder(folder_path, output_json_path=None):
         )
 
     return combined_dataset
+
+
+# Load Civil Code Articles
+def load_civil_code(path: str) -> List[Dict]:
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+# Load train/eval dataset
+def load_data(path: str) -> List[Dict]:
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)[:50]
+
+
+class ReasoningOutput(BaseModel):
+    answer: Literal["Y", "N"] = Field(
+        description="Whether the statement is true or not"
+    )
+    relevant_articles: List[int] = Field(description="List of relevant article numbers")
+
+
+# Prepare Prompt
+def create_simple_prompt(articles: List[Dict], question: str) -> str:
+    code_str = "\n".join(
+        [f"Article {art['number']}: {art['content']}" for art in articles]
+    )
+
+    prompt = f"""
+You are a legal reasoning AI. Given a list of Civil Code articles and a legal question or statement,
+your task is to determine whether the articles entail the statement as true (Y) or not (N).
+Repeatedly check and refine your reasoning and conclusions until you reach a final conclusion.
+
+Respond strictly with 'Y' or 'N'.
+
+Civil Code articles:
+{code_str}
+
+Respond to the following question or statement strictly with 'Y' for yes or 'N' for no. Do not use any other words or phrases. Only Y or N is allowed.
+
+Statement: {question}
+Answer:
+"""
+    return prompt
