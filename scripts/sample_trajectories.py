@@ -1,11 +1,12 @@
+import asyncio
 import os
 import json
 import random
 from tqdm import tqdm
-import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from tqdm.asyncio import tqdm_asyncio
 
-from utils import load_civil_code, load_data, create_prompt, compute_reward
+from multidocqa.llm_client import VllmEndpointGenerator
+from multidocqa.utils import compute_reward, load_data, create_simple_prompt
 
 # Paths
 CIVIL_CODE_FILE = (
@@ -17,47 +18,40 @@ TRAJECTORY_SAVE_PATH = "data/trajectories.jsonl"
 MODEL_NAME = "deepseek-ai/DeepSeek-R1-Distill-Qwen-14B"
 
 # Hyperparameters
-N_SAMPLES_PER_INPUT = 4
-MAX_SEQ_LEN = 2048
+N_SAMPLES_PER_INPUT = 100
 
 
 def main():
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    civil_code = load_civil_code(CIVIL_CODE_FILE)
     dataset = load_data(DATASET_FILE)
 
-    # Load model and tokenizer
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, trust_remote_code=True)
-    model = AutoModelForCausalLM.from_pretrained(MODEL_NAME, trust_remote_code=True)
-    model = model.to(device)
-    model.eval()
+    create_prompt = create_simple_prompt
+    prompts = [create_prompt(item["articles"], item["question"]) for item in dataset][
+        :10
+    ]
+    asyncio.run(save_trajectories(prompts, dataset))
 
+
+async def save_trajectories(prompts, dataset):
     # Open output file
     with open(TRAJECTORY_SAVE_PATH, "w", encoding="utf-8") as fout:
+        generator = VllmEndpointGenerator(model=MODEL_NAME)
+        print("Sending prompts to model...")
+        outputs = generator.generate(
+            prompts, n=N_SAMPLES_PER_INPUT, temperature=0.3, top_p=1.0
+        )
 
-        for item in tqdm(dataset):
-            prompt = create_prompt(item["articles"], item["question"])
-            input_ids = tokenizer(
-                prompt, return_tensors="pt", truncation=True, max_length=MAX_SEQ_LEN
-            ).input_ids.to(device)
+        idx = 0
+        async for outputs in tqdm_asyncio(outputs, total=len(prompts)):
+            dataset_item = dataset[idx]
+            prompt = prompts[idx]
+            idx += 1
 
             samples = []
-            for _ in range(N_SAMPLES_PER_INPUT):
-                with torch.no_grad():
-                    output = model.generate(
-                        input_ids=input_ids,
-                        max_new_tokens=5,
-                        do_sample=True,
-                        temperature=1.0,
-                        top_p=0.9,
-                    )
-                decoded = tokenizer.decode(
-                    output[0][input_ids.shape[-1] :], skip_special_tokens=True
+            for prediction, reasoning in outputs:
+                reward = compute_reward(prediction, dataset_item["label"])
+                samples.append(
+                    {"reasoning": reasoning, "prediction": prediction, "reward": reward}
                 )
-                reward = compute_reward(decoded, item["label"])
-
-                samples.append({"output": decoded, "reward": reward})
 
             fout.write(json.dumps({"prompt": prompt, "samples": samples}) + "\n")
 
