@@ -1,2 +1,4 @@
 transformers==4.50.3
 xformers
+datasets
+trl
