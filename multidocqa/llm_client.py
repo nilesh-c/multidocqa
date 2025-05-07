@@ -15,10 +15,10 @@ class VllmEndpointGenerator:
         self._client = self._get_client(openai_endpoint_url)
         self._semaphore = asyncio.Semaphore(max_concurrent_requests)
 
-    async def generate(self, texts: List[str], guided_json=None, **kwargs) -> List[str]:
+    async def generate(self, texts: List[str], **kwargs) -> List[str]:
         response_coroutines = []
         for text in texts:
-            response = self._get_response(text, guided_json, **kwargs)
+            response = self._get_response(text, **kwargs)
             response_coroutines.append(response)
 
         for future in asyncio.as_completed(response_coroutines):
@@ -28,13 +28,11 @@ class VllmEndpointGenerator:
     def _get_client(self, endpoint_url: str):
         return AsyncOpenAI(base_url=endpoint_url, api_key="empty")
 
-    async def _get_response(self, text: str, guided_json=None, **kwargs) -> str:
-        extra_body = {"guided_json": guided_json} if guided_json else None
+    async def _get_response(self, text: str, **kwargs) -> str:
         async with self._semaphore:
             response = await self._client.chat.completions.create(
                 model=self._model_name,
                 messages=[{"role": "user", "content": text}],
-                extra_body=extra_body,
                 **kwargs,
             )
 
