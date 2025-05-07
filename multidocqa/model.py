@@ -18,7 +18,7 @@ class LegalEntailmentModel(nn.Module):
         self.k_proj = nn.Linear(hidden_size, hidden_size, bias=False)
         self.v_proj = nn.Linear(hidden_size, hidden_size, bias=False)
 
-    def forward(self, question_tokens, article_tokens, inference=False, chunk_size=64):
+    def forward(self, question_tokens, article_tokens, inference=False, chunk_size=128):
         with torch.no_grad():
             question_embedding = self.encoder(**question_tokens).last_hidden_state
 
