@@ -126,7 +126,7 @@ def load_civil_code(path: str) -> List[Dict]:
 # Load train/eval dataset
 def load_data(path: str) -> List[Dict]:
     with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)[:50]
+        return json.load(f)
 
 
 class ReasoningOutput(BaseModel):
@@ -158,3 +158,9 @@ Statement: {question}
 Answer:
 """
     return prompt
+
+
+def compute_reward(prediction, label):
+    prediction = prediction.strip().upper()
+    label = label.strip().upper()
+    return 1.0 if prediction == label else 0.0
