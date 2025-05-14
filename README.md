@@ -4,7 +4,7 @@ Researchy work-in-progress code for an LLM-based system that, given a legal stat
 
 Currently focusing on the [COLIEE dataset](https://coliee.org/overview) (tasks 3 and 4)
 
-Here is an example of a training sample:
+Here is an example of a training sample, where each article is taken from a set of :
 
 ```json
 {
@@ -23,3 +23,17 @@ Here is an example of a training sample:
     "label": "N"
 }
 ```
+
+## Tasks
+
+We can try to frame three machine learning tasks with this dataset, depending upon what part of the data is used for supervision:
+1. Given a list of 782 civil code articles, given a question/statement, retrieve the relevant articles.
+2. Given a question/statement and a set of relevant articles, predict whether the articles positively or negatively entail the statement.
+3. Solve 1 & 2 end-to-end: given a list of 782 civil code articles, retrieve the relevant articles and predict the entailment. Note that we do not assume there is supervision for the relevant articles here.
+
+## Approaches to compare for task 3
+
+1. Baseline 1: do we need RAG if we have long-context LLMs? Craft a prompt containing the entire civil code along with the statement, output should be Y/N.
+2. Baseline 2: RAG, zero-shot, without any fine-tuning
+3. RAG, end-to-end trained with reinforcement learning (how can we optimize the pareto front of computation vs performance?)
+4. During the entailment stage - use a reasoning model, sample K reasoning outputs, compute rewards based on entailment labels, use these to train the model using RL.
