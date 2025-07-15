@@ -53,13 +53,13 @@ def parse_civil_code(file_path, output_json_path=None):
 
 def parse_single_coliee_xml(xml_file_path):
     """
-    Parses a single XML file and extracts question-article pairs and articles.
+    Parses a single XML file and extracts statement-article pairs and articles.
 
     Args:
         xml_file_path (str): Path to the XML file.
 
     Returns:
-        tuple: A tuple containing a list of question-article pairs and a list of articles.
+        tuple: A tuple containing a list of statement-article pairs and a list of articles.
     """
     dataset = []
     articles_data = []
@@ -69,13 +69,13 @@ def parse_single_coliee_xml(xml_file_path):
     for pair in root.findall("pair"):
         pair_id = pair.get("id")
         label = pair.get("label")
-        question = pair.find("t2").text.strip()
+        statement = pair.find("t2").text.strip()
         articles_text = pair.find("t1").text.strip()
         structured_articles = extract_articles(articles_text)
         dataset.append(
             {
                 "id": pair_id,
-                "question": question,
+                "statement": statement,
                 "articles": structured_articles,
                 "label": label,
             }
@@ -94,7 +94,7 @@ def parse_coliee_xml_folder(folder_path, output_json_path=None):
         output_json (str): Path to save the combined dataset as a JSON file.
 
     Returns:
-        list: A list of question-article pairs
+        list: A list of statement-article pairs
     """
     combined_dataset = []
     combined_articles_data = []
@@ -111,7 +111,7 @@ def parse_coliee_xml_folder(folder_path, output_json_path=None):
             json.dump(combined_dataset, f, indent=4, ensure_ascii=False)
 
         print(
-            f"Parsed {len(combined_dataset)} question-article pairs and {len(combined_articles_data)} articles, saved to {output_json_path}"
+            f"Parsed {len(combined_dataset)} statement-article pairs and {len(combined_articles_data)} articles, saved to {output_json_path}"
         )
 
     return combined_dataset
@@ -137,13 +137,13 @@ class ReasoningOutput(BaseModel):
 
 
 # Prepare Prompt
-def create_simple_prompt(articles: List[Dict], question: str) -> str:
+def create_simple_prompt(articles: List[Dict], statement: str) -> str:
     code_str = "\n".join(
         [f"Article {art['number']}: {art['content']}" for art in articles]
     )
 
     prompt = f"""
-You are a legal reasoning AI. Given a list of Civil Code articles and a legal question or statement,
+You are a legal reasoning AI. Given a list of Civil Code articles and a legal statement,
 your task is to determine whether the articles entail the statement as true (Y) or not (N).
 Repeatedly check and refine your reasoning and conclusions until you reach a final conclusion.
 
@@ -152,9 +152,9 @@ Respond strictly with 'Y' or 'N'.
 Civil Code articles:
 {code_str}
 
-Respond to the following question or statement strictly with 'Y' for yes or 'N' for no. Do not use any other words or phrases. Only Y or N is allowed.
+Respond to the following statement strictly with 'Y' for yes or 'N' for no. Do not use any other words or phrases. Only Y or N is allowed.
 
-Statement: {question}
+Statement: {statement}
 Answer:
 """
     return prompt
