@@ -5,49 +5,53 @@ This module builds datasets for training models to predict whether a legal state
 is relevant to a given civil code article.
 
 Dataset Construction:
-- Positive pairs: (article, statement) pairs that appear together in train.json
+- Positive pairs: (article, statement) pairs that appear together in entailment_pairs
 - Negative pairs: (article, statement) pairs that don't appear together
 - Ratio: 1:3 (positive:negative)
 - Negative sampling: Random articles from civil code + other training articles
+
+Input Format:
+- Combined dataset with "articles" and "entailment_pairs" keys
+- Articles: List of civil code articles with number and content
+- Entailment pairs: List of statement-article pairs with labels
 """
 
 import random
-from typing import List, Dict, Tuple
-from collections import defaultdict
-from datasets import Dataset
 import re
+from collections import defaultdict
+from typing import Dict, List, Set, Tuple
 
-from multidocqa.utils import load_data, load_civil_code
+from datasets import Dataset
+
+from multidocqa.utils import load_data
 
 
 class RelevanceDatasetBuilder:
     """Builder for legal relevance prediction datasets."""
 
-    def __init__(
-        self, train_data_path: str, civil_code_path: str, negative_ratio: int = 3
-    ):
+    def __init__(self, combined_dataset_path: str, negative_ratio: int = 3):
         """
         Initialize the relevance dataset builder.
 
         Args:
-            train_data_path: Path to training data (train.json)
-            civil_code_path: Path to civil code articles
+            combined_dataset_path: Path to combined dataset with articles and
+                entailment_pairs
             negative_ratio: Number of negative samples per positive sample
         """
-        self.train_data_path = train_data_path
-        self.civil_code_path = civil_code_path
+        self.combined_dataset_path = combined_dataset_path
         self.negative_ratio = negative_ratio
 
-        # Load data
-        self.train_data = load_data(train_data_path)
-        self.civil_code = load_civil_code(civil_code_path)
+        # Load combined data
+        combined_data = load_data(combined_dataset_path)
+        self.train_data: List[Dict] = combined_data["entailment_pairs"]  # type: ignore
+        self.civil_code: List[Dict] = combined_data["articles"]  # type: ignore
 
         # Build article lookup that preserves full article numbers
         self.all_articles = self._build_article_lookup()
 
         # Track which articles appear with which statements
-        self.statement_to_articles = defaultdict(set)
-        self.article_to_statements = defaultdict(set)
+        self.statement_to_articles: Dict[str, Set[str]] = defaultdict(set)
+        self.article_to_statements: Dict[str, Set[str]] = defaultdict(set)
 
         self._build_cooccurrence_maps()
 
@@ -87,7 +91,7 @@ class RelevanceDatasetBuilder:
 
         return lookup
 
-    def _build_cooccurrence_maps(self):
+    def _build_cooccurrence_maps(self) -> None:
         """Build maps of statement-article co-occurrences with clean article numbers."""
         for item in self.train_data:
             statement_id = item["id"]
@@ -139,7 +143,7 @@ class RelevanceDatasetBuilder:
         positive_pairs = []
 
         for item in self.train_data:
-            statement = item["question"]
+            statement = item["statement"]
             statement_id = item["id"]
 
             # Create positive pair for each article that appears with this statement
@@ -173,7 +177,8 @@ class RelevanceDatasetBuilder:
 
     def _generate_negative_pairs(self, num_negatives_per_statement: int) -> List[Dict]:
         """
-        Generate negative (article, statement) pairs using structured per-statement sampling.
+        Generate negative (article, statement) pairs using structured
+        per-statement sampling.
         """
         negative_pairs = []
 
@@ -183,7 +188,7 @@ class RelevanceDatasetBuilder:
         )
 
         # Pre-compute irrelevant articles for each statement
-        statement_irrelevant_articles = {}
+        statement_irrelevant_articles: Dict[str, List[str]] = {}
         for item in self.train_data:
             statement_id = item["id"]
             relevant_articles = self.statement_to_articles[statement_id]
@@ -193,25 +198,25 @@ class RelevanceDatasetBuilder:
 
         # Generate negatives for each statement
         for item in self.train_data:
-            statement = item["question"]
+            statement = item["statement"]
             statement_id = item["id"]
 
             # Get pre-computed irrelevant articles
-            irrelevant_articles = statement_irrelevant_articles[statement_id]
+            available_articles: List[str] = statement_irrelevant_articles[statement_id]
 
-            if not irrelevant_articles:
+            if not available_articles:
                 continue  # Skip if no irrelevant articles (shouldn't happen)
 
             # Sample the required number of irrelevant articles
-            if len(irrelevant_articles) >= num_negatives_per_statement:
+            if len(available_articles) >= num_negatives_per_statement:
                 # Sample without replacement for better diversity
-                sampled_articles = random.sample(
-                    irrelevant_articles, num_negatives_per_statement
+                sampled_articles: List[str] = random.sample(
+                    available_articles, num_negatives_per_statement
                 )
             else:
                 # If not enough unique articles, sample with replacement
                 sampled_articles = random.choices(
-                    irrelevant_articles, k=num_negatives_per_statement
+                    available_articles, k=num_negatives_per_statement
                 )
 
             # Create negative pairs
@@ -237,7 +242,8 @@ class RelevanceDatasetBuilder:
         statement = pair["statement"]
 
         prompt = f"""
-You are a legal AI assistant. Given a civil code article and a legal statement, determine if the statement is relevant to the article.
+You are a legal AI assistant. Given a civil code article and a legal statement, \
+determine if the statement is relevant to the article.
 
 A statement is relevant to an article if:
 - The article's content could be used to reason about the statement
@@ -279,12 +285,12 @@ Is this statement relevant to the article? Answer:
         unique_statements = len(set(pair["statement_id"] for pair in positive_pairs))
 
         # Article usage distribution
-        article_counts = defaultdict(int)
+        article_counts: Dict[str, int] = defaultdict(int)
         for pair in positive_pairs:
             article_counts[pair["article_number"]] += 1
 
         # Statement-article pair distribution
-        statement_article_counts = defaultdict(int)
+        statement_article_counts: Dict[int, int] = defaultdict(int)
         for articles in self.statement_to_articles.values():
             statement_article_counts[len(articles)] += 1
 
@@ -315,7 +321,7 @@ def create_relevance_prompt_simple(article_content: str, statement: str) -> str:
         Formatted prompt for relevance prediction
     """
     return f"""
-Given this civil code article and legal statement, determine if they are relevant to each other.
+Given this civil code article and legal statement, determine if they are relevant.
 
 Article: {article_content}
 
