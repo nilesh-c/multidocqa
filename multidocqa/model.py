@@ -1,11 +1,19 @@
+from typing import Any, Dict, List
+
 import torch
 import torch.nn as nn
-from xformers.ops import memory_efficient_attention
 from tqdm import tqdm
+from xformers.ops import memory_efficient_attention
 
 
 class LegalEntailmentModel(nn.Module):
-    def __init__(self, encoder, hidden_size=768, use_gumbel=False, temperature=1.0):
+    def __init__(
+        self,
+        encoder: Any,
+        hidden_size: int = 768,
+        use_gumbel: bool = False,
+        temperature: float = 1.0,
+    ) -> None:
         super(LegalEntailmentModel, self).__init__()
         self.encoder = encoder
         self.hidden_size = hidden_size
@@ -18,7 +26,13 @@ class LegalEntailmentModel(nn.Module):
         self.k_proj = nn.Linear(hidden_size, hidden_size, bias=False)
         self.v_proj = nn.Linear(hidden_size, hidden_size, bias=False)
 
-    def forward(self, question_tokens, article_tokens, inference=False, chunk_size=128):
+    def forward(
+        self,
+        question_tokens: Dict[str, Any],
+        article_tokens: List[Dict[str, Any]],
+        inference: bool = False,
+        chunk_size: int = 128,
+    ) -> torch.Tensor:
         with torch.no_grad():
             question_embedding = self.encoder(**question_tokens).last_hidden_state
 
@@ -34,11 +48,11 @@ class LegalEntailmentModel(nn.Module):
             chunk = article_tokens[i : i + chunk_size]
 
             with torch.no_grad():
-                article_embeddings = [
+                article_embeddings_list = [
                     self.encoder(**inputs).last_hidden_state for inputs in chunk
                 ]
                 article_embeddings = nn.utils.rnn.pad_sequence(
-                    article_embeddings, batch_first=True
+                    article_embeddings_list, batch_first=True
                 )
 
             chunk_size_actual = len(chunk)
