@@ -1,11 +1,12 @@
+import json
 import os
 import xml.etree.ElementTree as ET
-import json
-from typing import List, Dict, Literal
+from typing import Dict, List, Literal, Optional, Tuple
+
 from pydantic import BaseModel, Field
 
 
-def extract_articles(text):
+def extract_articles(text: str) -> List[Dict[str, str]]:
     extracted_articles = []
     lines = text.split("\n")
     current_article = None
@@ -27,7 +28,9 @@ def extract_articles(text):
     return extracted_articles
 
 
-def parse_civil_code(file_path, output_json_path=None):
+def parse_civil_code(
+    file_path: str, output_json_path: Optional[str] = None
+) -> List[Dict]:
     """
     Parses a civil code text file and extracts articles, saving them to a JSON file.
 
@@ -51,7 +54,7 @@ def parse_civil_code(file_path, output_json_path=None):
     return articles
 
 
-def parse_single_coliee_xml(xml_file_path):
+def parse_single_coliee_xml(xml_file_path: str) -> Tuple[List[Dict], List[Dict]]:
     """
     Parses a single XML file and extracts statement-article pairs and articles.
 
@@ -59,7 +62,7 @@ def parse_single_coliee_xml(xml_file_path):
         xml_file_path (str): Path to the XML file.
 
     Returns:
-        tuple: A tuple containing a list of statement-article pairs and a list of articles.
+        tuple: A tuple containing a list of statement-article pairs and a list of articles.  # noqa: E501
     """
     dataset = []
     articles_data = []
@@ -69,8 +72,10 @@ def parse_single_coliee_xml(xml_file_path):
     for pair in root.findall("pair"):
         pair_id = pair.get("id")
         label = pair.get("label")
-        statement = pair.find("t2").text.strip()
-        articles_text = pair.find("t1").text.strip()
+        t2_elem = pair.find("t2")
+        t1_elem = pair.find("t1")
+        statement = extract_text_from_element(t2_elem)
+        articles_text = extract_text_from_element(t1_elem)
         structured_articles = extract_articles(articles_text)
         dataset.append(
             {
@@ -85,7 +90,16 @@ def parse_single_coliee_xml(xml_file_path):
     return dataset, articles_data
 
 
-def parse_coliee_xml_folder(folder_path, output_json_path=None):
+def extract_text_from_element(element: Optional[ET.Element]) -> str:
+    if element is not None and element.text is not None:
+        return element.text.strip()
+    else:
+        return ""
+
+
+def parse_coliee_xml_folder(
+    folder_path: str, output_json_path: Optional[str] = None
+) -> List[Dict]:
     """
     Parses all XML files in a folder and creates a combined dataset.
 
@@ -111,7 +125,7 @@ def parse_coliee_xml_folder(folder_path, output_json_path=None):
             json.dump(combined_dataset, f, indent=4, ensure_ascii=False)
 
         print(
-            f"Parsed {len(combined_dataset)} statement-article pairs and {len(combined_articles_data)} articles, saved to {output_json_path}"
+            f"Parsed {len(combined_dataset)} statement-article pairs and {len(combined_articles_data)} articles, saved to {output_json_path}"  # noqa: E501
         )
 
     return combined_dataset
@@ -120,20 +134,22 @@ def parse_coliee_xml_folder(folder_path, output_json_path=None):
 # Load Civil Code Articles
 def load_civil_code(path: str) -> List[Dict]:
     with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
+        return json.load(f)  # type: ignore
 
 
 # Load train/eval dataset
 def load_data(path: str) -> List[Dict]:
     with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
+        return json.load(f)  # type: ignore
 
 
 class ReasoningOutput(BaseModel):
     answer: Literal["Y", "N"] = Field(
         description="Whether the statement is true or not"
     )
-    relevant_articles: List[int] = Field(description="List of relevant article numbers")
+    relevant_articles: List[int] = Field(
+        description="List of relevant article numbers"
+    )  # noqa: E501
 
 
 # Prepare Prompt
@@ -145,14 +161,14 @@ def create_simple_prompt(articles: List[Dict], statement: str) -> str:
     prompt = f"""
 You are a legal reasoning AI. Given a list of Civil Code articles and a legal statement,
 your task is to determine whether the articles entail the statement as true (Y) or not (N).
-Repeatedly check and refine your reasoning and conclusions until you reach a final conclusion.
+Repeatedly check and refine your reasoning and conclusions until you reach a final conclusion.  # noqa: E501
 
 Respond strictly with 'Y' or 'N'.
 
 Civil Code articles:
 {code_str}
 
-Respond to the following statement strictly with 'Y' for yes or 'N' for no. Do not use any other words or phrases. Only Y or N is allowed.
+Respond to the following statement strictly with 'Y' for yes or 'N' for no. Do not use any other words or phrases. Only Y or N is allowed.  # noqa: E501
 
 Statement: {statement}
 Answer:
@@ -160,7 +176,7 @@ Answer:
     return prompt
 
 
-def compute_reward(prediction, label):
+def compute_reward(prediction: str, label: str) -> float:
     prediction = prediction.strip().upper()
     label = label.strip().upper()
     return 1.0 if prediction == label else 0.0
