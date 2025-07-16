@@ -1,11 +1,14 @@
 import asyncio
+from typing import Dict, List
+
 from openai import AsyncOpenAI
 from tqdm.asyncio import tqdm_asyncio
-from typing import List, Dict
-from multidocqa.utils import load_data, create_simple_prompt
-from multidocqa.llm_client import VllmEndpointGenerator
 
-# Script for zero-shot or few-shot in-context learning (ICL) evaluation of a legal reasoning model using OpenAI API
+from multidocqa.llm_client import VllmEndpointGenerator
+from multidocqa.utils import create_simple_prompt, load_data
+
+# Script for zero-shot or few-shot in-context learning (ICL) evaluation
+# of a legal reasoning model using OpenAI API
 
 # MODEL_NAME = "deepseek-ai/DeepSeek-R1-Distill-Llama-8B"
 MODEL_NAME = "deepseek-ai/DeepSeek-R1-Distill-Qwen-14B"
@@ -46,9 +49,9 @@ async def evaluate(dataset: List[Dict]) -> None:
         if predicted_label == gold_label:
             correct += 1
         else:
-            print(
-                f"\nIncorrect prediction for ID {item['id']}\nQuestion: {item['question']}\nPrediction: {predicted_label}, Gold: {gold_label}\n"
-            )
+            print(f"\nIncorrect prediction for ID {item['id']}")
+            print(f"Question: {item['question']}")
+            print(f"Prediction: {predicted_label}, Gold: {gold_label}\n")
             print(reasoning)
 
     accuracy = correct / total * 100

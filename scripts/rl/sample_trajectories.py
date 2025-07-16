@@ -1,13 +1,13 @@
 import asyncio
 import json
+from typing import Any, List, Tuple
+
 import numpy as np
-from tqdm import tqdm
+from pydantic import BaseModel
 from tqdm.asyncio import tqdm_asyncio
 
 from multidocqa.llm_client import VllmEndpointGenerator
-from multidocqa.utils import compute_reward, load_data, create_simple_prompt
-from pydantic import BaseModel
-from typing import Any
+from multidocqa.utils import compute_reward, create_simple_prompt, load_data
 
 # Paths
 CIVIL_CODE_FILE = (
@@ -28,7 +28,9 @@ class DataPoint(BaseModel):
     label: str
 
 
-async def process_outputs(outputs, data_point: DataPoint):
+async def process_outputs(
+    outputs: Any, data_point: DataPoint
+) -> Tuple[DataPoint, List[Any]]:
     async for output in outputs:
         samples = []
         for prediction, reasoning in output:
@@ -40,7 +42,9 @@ async def process_outputs(outputs, data_point: DataPoint):
     return data_point, samples
 
 
-async def process_chunk(generator: VllmEndpointGenerator, chunk: list[DataPoint]):
+async def process_chunk(
+    generator: VllmEndpointGenerator, chunk: List[DataPoint]
+) -> List[Any]:
     """Process a single chunk of prompts."""
     outputs = []
     for seed in range(0, int(N_SAMPLES_PER_INPUT / 10)):
@@ -80,7 +84,7 @@ async def process_chunk(generator: VllmEndpointGenerator, chunk: list[DataPoint]
     return list(grouped_results.values())
 
 
-async def save_trajectories(prompts: list[DataPoint]):
+async def save_trajectories(prompts: List[DataPoint]) -> None:
     # Open output file
     with open(TRAJECTORY_SAVE_PATH, "w", encoding="utf-8") as fout:
         generators = [
@@ -95,7 +99,8 @@ async def save_trajectories(prompts: list[DataPoint]):
         print("Sending prompts to model...")
         # Create tasks for processing chunks concurrently
         tasks = []
-        for idx, chunk in enumerate(np.array_split(prompts, 3)):
+        chunks = np.array_split(np.array(prompts), 3)
+        for idx, chunk in enumerate(chunks):
             tasks.append(process_chunk(generators[idx % 3], chunk.tolist()))
 
         # Wait for all tasks to complete
@@ -109,7 +114,7 @@ async def save_trajectories(prompts: list[DataPoint]):
     print(f"Saved all trajectories to {TRAJECTORY_SAVE_PATH}")
 
 
-def main():
+def main() -> None:
     dataset = load_data(DATASET_FILE)
 
     create_prompt = create_simple_prompt

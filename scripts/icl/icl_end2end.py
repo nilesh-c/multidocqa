@@ -1,13 +1,15 @@
-import json
 import asyncio
-import pprint
-from openai import AsyncOpenAI
-from multidocqa.utils import load_data, load_civil_code, ReasoningOutput
-from tqdm.asyncio import tqdm_asyncio
-from typing import List, Dict, Literal
-from multidocqa.llm_client import VllmEndpointGenerator
+from typing import Dict, List, Literal
 
-# Script for zero-shot or few-shot in-context learning (ICL) evaluation of a legal reasoning model using OpenAI API
+from openai import AsyncOpenAI
+from pydantic import ValidationError
+from tqdm.asyncio import tqdm_asyncio
+
+from multidocqa.llm_client import VllmEndpointGenerator
+from multidocqa.utils import ReasoningOutput, load_civil_code, load_data
+
+# Script for zero-shot or few-shot in-context learning (ICL) evaluation
+# of a legal reasoning model using OpenAI API
 
 MODEL_NAME = "deepseek-ai/DeepSeek-R1-Distill-Llama-8B"
 
@@ -42,7 +44,7 @@ Respond to the following question or statement strictly with 'Y' for yes or 'N' 
 
 Statement: {question}
 Answer:
-"""
+"""  # noqa: E501
     return prompt
 
 
@@ -68,7 +70,7 @@ along with a list of relevant article numbers. Choose a maximum of 5 articles.
 Statement: {question}
 JSON Schema: {ReasoningOutput.model_json_schema()}
 Answer:
-"""
+"""  # noqa: E501
     return prompt
 
 
@@ -121,9 +123,9 @@ async def evaluate(
         if predicted_label == gold_label:
             correct += 1
         else:
-            print(
-                f"\nIncorrect prediction for ID {item['id']}\nQuestion: {item['question']}\nPrediction: {predicted_label}, Gold: {gold_label}\n"
-            )
+            print(f"\nIncorrect prediction for ID {item['id']}")
+            print(f"Question: {item['question']}")
+            print(f"Prediction: {predicted_label}, Gold: {gold_label}\n")
             print(reasoning)
 
     accuracy = correct / total * 100
