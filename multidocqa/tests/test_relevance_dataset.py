@@ -28,7 +28,7 @@ class TestRelevanceDatasetBuilder(unittest.TestCase):
         self.sample_train_data = [
             {
                 "id": "case1",
-                "question": "Can A rescind the contract?",
+                "statement": "Can A rescind the contract?",
                 "articles": [
                     {"number": "101", "content": "Content of article 101"},
                     {"number": "96", "content": "Content of article 96"},
@@ -37,13 +37,13 @@ class TestRelevanceDatasetBuilder(unittest.TestCase):
             },
             {
                 "id": "case2",
-                "question": "Is the contract valid?",
+                "statement": "Is the contract valid?",
                 "articles": [{"number": "102", "content": "Content of article 102"}],
                 "label": "N",
             },
             {
                 "id": "case3",
-                "question": "Does B have authority?",
+                "statement": "Does B have authority?",
                 "articles": [
                     {"number": "101", "content": "Content of article 101"},
                     {"number": "103", "content": "Content of article 103"},
@@ -78,22 +78,21 @@ class TestRelevanceDatasetBuilder(unittest.TestCase):
 
         # Mock the load functions to use our test data
         self.load_data_patcher = patch("multidocqa.relevance_dataset.load_data")
-        self.load_civil_code_patcher = patch(
-            "multidocqa.relevance_dataset.load_civil_code"
-        )
 
         self.mock_load_data = self.load_data_patcher.start()
-        self.mock_load_civil_code = self.load_civil_code_patcher.start()
 
-        self.mock_load_data.return_value = self.sample_train_data
-        self.mock_load_civil_code.return_value = self.sample_civil_code
+        # Create combined dataset structure that RelevanceDatasetBuilder expects
+        combined_data = {
+            "entailment_pairs": self.sample_train_data,
+            "articles": self.sample_civil_code,
+        }
+        self.mock_load_data.return_value = combined_data
 
     def tearDown(self) -> None:
         """Clean up test fixtures."""
         os.unlink(self.train_file.name)
         os.unlink(self.civil_code_file.name)
         self.load_data_patcher.stop()
-        self.load_civil_code_patcher.stop()
 
     def test_init(self) -> None:
         """Test RelevanceDatasetBuilder initialization."""
@@ -336,7 +335,7 @@ class TestRelevanceDatasetIntegration(unittest.TestCase):
         self.comprehensive_train_data = [
             {
                 "id": "H27-3-U",
-                "question": (
+                "statement": (
                     "In the case where B, who was granted authority of agency to buy a land as an "  # noqa: E501
                     "agent of A, concluded a contract for sale of a land 'X' with C "  # noqa: E501
                     "representing that the same is made on behalf of A by the fraud of C to "  # noqa: E501
@@ -368,7 +367,7 @@ class TestRelevanceDatasetIntegration(unittest.TestCase):
             },
             {
                 "id": "H27-3-E",
-                "question": (
+                "statement": (
                     "In the case where B, who was granted authority of agency to buy a land as an "  # noqa: E501
                     "agent of A, was granted authority of agency to sell the land by C, became the "  # noqa: E501
                     "agent of C, and concluded a contract for sale of a land 'X' between A and C, "  # noqa: E501
@@ -419,20 +418,19 @@ class TestRelevanceDatasetIntegration(unittest.TestCase):
 
         # Mock the load functions
         self.load_data_patcher = patch("multidocqa.relevance_dataset.load_data")
-        self.load_civil_code_patcher = patch(
-            "multidocqa.relevance_dataset.load_civil_code"
-        )
 
         self.mock_load_data = self.load_data_patcher.start()
-        self.mock_load_civil_code = self.load_civil_code_patcher.start()
 
-        self.mock_load_data.return_value = self.comprehensive_train_data
-        self.mock_load_civil_code.return_value = self.comprehensive_civil_code
+        # Create combined dataset structure that RelevanceDatasetBuilder expects
+        combined_data = {
+            "entailment_pairs": self.comprehensive_train_data,
+            "articles": self.comprehensive_civil_code,
+        }
+        self.mock_load_data.return_value = combined_data
 
     def tearDown(self) -> None:
         """Clean up integration test fixtures."""
         self.load_data_patcher.stop()
-        self.load_civil_code_patcher.stop()
 
     def test_realistic_dataset_construction(self) -> None:
         """Test dataset construction with realistic data."""
