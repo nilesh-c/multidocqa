@@ -1,19 +1,19 @@
 """
-Relevance Dataset Builder for Legal Document Relevance Prediction
+Relevance Dataset Builder for COLIEE 2025 (Task 3)
 
-This module builds datasets for training models to predict whether a legal statement
-is relevant to a given civil code article.
+This module builds datasets for training models to predict whether a given civil code
+is relevant to a legal statement.
 
 Dataset Construction:
 - Positive pairs: (article, statement) pairs that appear together in entailment_pairs
 - Negative pairs: (article, statement) pairs that don't appear together
-- Ratio: 1:3 (positive:negative)
-- Negative sampling: Random articles from civil code + other training articles
+- Configurable negative sampling ratio
 
 Input Format:
-- Combined dataset with "articles" and "entailment_pairs" keys
+- Combined dataset with "articles" and "entailment_pairs" keys generated
+  from COLIEE XML files (see scripts/build_dataset.py)
 - Articles: List of civil code articles with number and content
-- Entailment pairs: List of statement-article pairs with labels
+- Entailment pairs: List of statement-article pairs with Y/N labels
 """
 
 import random
