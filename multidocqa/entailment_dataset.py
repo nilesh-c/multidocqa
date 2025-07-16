@@ -158,9 +158,11 @@ class EntailmentDatasetBuilder:
 
         # Article count distribution
         article_counts = [len(s["articles"]) for s in samples]
-        avg_articles = sum(article_counts) / len(article_counts)
-        min_articles = min(article_counts)
-        max_articles = max(article_counts)
+        avg_articles = (
+            sum(article_counts) / len(article_counts) if article_counts else 0.0
+        )
+        min_articles = min(article_counts) if article_counts else 0
+        max_articles = max(article_counts) if article_counts else 0
 
         # Article usage frequency
         article_usage: Dict[str, int] = defaultdict(int)
