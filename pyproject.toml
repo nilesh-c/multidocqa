@@ -24,6 +24,10 @@ dependencies = [
     "datasets",
     "trl",
     "pydantic",
+    "matplotlib",
+    "seaborn",
+    "wordcloud",
+    "plotly"
 ]
 
 [tool.setuptools.packages.find]
@@ -39,6 +43,7 @@ dev = [
     "mypy",
     "isort",
     "pre-commit",
+    "jupyter",
 ]
 
 [tool.black]
